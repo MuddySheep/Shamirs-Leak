@@ -1,6 +1,6 @@
 use rayon::prelude::*;
 
-use crate::search::heuristics::candidate_queue;
+use crate::search::heuristics::{candidate_queue, candidate_indexes};
 
 use crate::bip39::{checksum::entropy_to_mnemonic, seed::derive_seed};
 use crate::shamir::reconstruct::attempt_reconstruction;
@@ -27,17 +27,22 @@ pub fn brute_force_third_share(
     expected_zpub: &str,
     max_depth: usize,
     log: Option<&CodexResearcher>,
+    prng: &crate::entropy::prng::PrngSettings,
+    index_collision_prob: f64,
 ) -> Option<(Vec<u8>, String)> {
     assert_eq!(share_a.len(), share_b.len(), "share length mismatch");
     assert!(share_a.len() > 1, "shares must include payload");
     assert!(share_a[0] != share_b[0], "duplicate share indexes");
 
+    assert!((0.0..=1.0).contains(&index_collision_prob), "probability out of range");
+
     let payload_len = share_a.len() - 1;
 
-    let heuristics_first = candidate_queue(share_a, share_b, max_depth, 256);
+    let heuristics_first = candidate_queue(share_a, share_b, max_depth, 256, prng);
+    let idx_candidates = candidate_indexes(share_a[0], share_b[0], index_collision_prob);
     if let Some(found) = heuristics_first.into_par_iter().find_map_any(|data| {
-        for idx in 1u8..=255 {
-            if idx == share_a[0] || idx == share_b[0] {
+        for &idx in idx_candidates.iter() {
+            if index_collision_prob == 0.0 && (idx == share_a[0] || idx == share_b[0]) {
                 continue;
             }
 
@@ -82,8 +87,8 @@ pub fn brute_force_third_share(
             tmp >>= 8;
         }
 
-        for idx in 1u8..=255 {
-            if idx == share_a[0] || idx == share_b[0] {
+        for &idx in idx_candidates.iter() {
+            if index_collision_prob == 0.0 && (idx == share_a[0] || idx == share_b[0]) {
                 continue;
             }
 
@@ -167,6 +172,8 @@ mod tests {
             &zpub,
             candidate_num + 1,
             None,
+            &crate::entropy::prng::PrngSettings::default(),
+            0.0,
         )
         .expect("should find share");
 

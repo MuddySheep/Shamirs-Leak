@@ -1,6 +1,6 @@
 use std::collections::{HashSet, VecDeque};
 
-use crate::entropy::prng::simulate_entropy_source;
+use crate::entropy::prng::{simulate_entropy_source_with, PrngSettings};
 
 // Compile-time check: this code assumes a little-endian target
 const _: () = {
@@ -49,13 +49,14 @@ pub fn candidate_queue(
     share_b: &[u8],
     max_depth: usize,
     queue_size: usize,
+    prng: &PrngSettings,
 ) -> VecDeque<Vec<u8>> {
     assert_eq!(share_a.len(), share_b.len(), "share length mismatch");
     assert!(share_a.len() > 1, "shares must include payload");
 
     let payload_len = share_a.len() - 1;
     let freq = byte_frequency_model([share_a, share_b]);
-    let prng_bytes = simulate_entropy_source(payload_len);
+    let prng_bytes = simulate_entropy_source_with(payload_len, prng);
 
     let mut scored = Vec::with_capacity(max_depth);
     for candidate in 0..max_depth {
@@ -74,6 +75,23 @@ pub fn candidate_queue(
     scored.truncate(queue_size);
 
     scored.into_iter().map(|(p, _)| p).collect()
+}
+
+/// Generate an ordered list of candidate share indexes based on collision probability.
+pub fn candidate_indexes(a_idx: u8, b_idx: u8, prob: f64) -> Vec<u8> {
+    assert!((0.0..=1.0).contains(&prob), "probability out of range");
+
+    let mut weighted: Vec<(u8, f64)> = Vec::with_capacity(255);
+    for idx in 1u8..=255 {
+        let weight = if idx == a_idx || idx == b_idx {
+            prob / 2.0
+        } else {
+            (1.0 - prob) / 253.0
+        };
+        weighted.push((idx, weight));
+    }
+    weighted.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+    weighted.into_iter().map(|(i, _)| i).collect()
 }
 
 /// Placeholder wrapper demonstrating heuristic analysis.
@@ -96,8 +114,16 @@ mod tests {
             *b = 0;
         }
 
-        let q = candidate_queue(&share_a, &share_b, 4, 1);
+        let prng = PrngSettings::default();
+        let q = candidate_queue(&share_a, &share_b, 4, 1, &prng);
         assert_eq!(q[0], vec![0u8; 16]);
+    }
+
+    #[test]
+    fn test_candidate_indexes_includes_duplicates() {
+        let idxs = candidate_indexes(1, 2, 0.5);
+        assert_eq!(idxs[0], 1);
+        assert_eq!(idxs[1], 2);
     }
 }
 

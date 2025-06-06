@@ -8,6 +8,9 @@ pub struct CliArgs {
     pub share2: String,
     pub zpub: Option<String>,
     pub threads: Option<usize>,
+    pub prng_reuse: Option<usize>,
+    pub prng_mask: Option<u8>,
+    pub index_collision: Option<f64>,
 }
 
 impl CliArgs {
@@ -26,6 +29,9 @@ impl CliArgs {
         let mut share2 = None;
         let mut zpub = None;
         let mut threads = None;
+        let mut prng_reuse = None;
+        let mut prng_mask = None;
+        let mut index_collision = None;
 
         while let Some(arg) = args.next() {
             match arg.as_str() {
@@ -39,6 +45,27 @@ impl CliArgs {
                         return Err("--threads requires value".into());
                     }
                 }
+                "--prng-reuse" => {
+                    if let Some(val) = args.next() {
+                        prng_reuse = Some(val.parse().map_err(|e| format!("bad --prng-reuse: {}", e))?);
+                    } else {
+                        return Err("--prng-reuse requires value".into());
+                    }
+                }
+                "--prng-mask" => {
+                    if let Some(val) = args.next() {
+                        prng_mask = Some(val.parse().map_err(|e| format!("bad --prng-mask: {}", e))?);
+                    } else {
+                        return Err("--prng-mask requires value".into());
+                    }
+                }
+                "--index-collision" => {
+                    if let Some(val) = args.next() {
+                        index_collision = Some(val.parse().map_err(|e| format!("bad --index-collision: {}", e))?);
+                    } else {
+                        return Err("--index-collision requires value".into());
+                    }
+                }
                 other => return Err(format!("unknown arg: {}", other)),
             }
         }
@@ -46,7 +73,7 @@ impl CliArgs {
         let share1 = share1.ok_or("--share1 required")?;
         let share2 = share2.ok_or("--share2 required")?;
 
-        Ok(CliArgs { share1, share2, zpub, threads })
+        Ok(CliArgs { share1, share2, zpub, threads, prng_reuse, prng_mask, index_collision })
     }
 
     /// Load a mnemonic either from inline string or from file path.
@@ -71,5 +98,8 @@ mod tests {
         let parsed = CliArgs::parse_from(args.into_iter().map(String::from)).unwrap();
         assert_eq!(parsed.share1, "a");
         assert_eq!(parsed.share2, "b");
+        assert!(parsed.prng_reuse.is_none());
+        assert!(parsed.prng_mask.is_none());
+        assert!(parsed.index_collision.is_none());
     }
 }
