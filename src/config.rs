@@ -5,6 +5,7 @@ pub struct Config {
     pub share1: String,
     pub share2: String,
     pub zpub: Option<String>,
+    pub progress: bool,
 }
 
 impl Default for Config {
@@ -15,6 +16,7 @@ impl Default for Config {
             share1: String::new(),
             share2: String::new(),
             zpub: None,
+            progress: false,
         }
     }
 }

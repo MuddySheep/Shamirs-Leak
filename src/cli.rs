@@ -8,6 +8,7 @@ pub struct CliArgs {
     pub share2: String,
     pub zpub: Option<String>,
     pub threads: Option<usize>,
+    pub progress: bool,
 }
 
 impl CliArgs {
@@ -26,6 +27,7 @@ impl CliArgs {
         let mut share2 = None;
         let mut zpub = None;
         let mut threads = None;
+        let mut progress = false;
 
         while let Some(arg) = args.next() {
             match arg.as_str() {
@@ -39,6 +41,9 @@ impl CliArgs {
                         return Err("--threads requires value".into());
                     }
                 }
+                "--progress" => {
+                    progress = true;
+                }
                 other => return Err(format!("unknown arg: {}", other)),
             }
         }
@@ -46,7 +51,7 @@ impl CliArgs {
         let share1 = share1.ok_or("--share1 required")?;
         let share2 = share2.ok_or("--share2 required")?;
 
-        Ok(CliArgs { share1, share2, zpub, threads })
+        Ok(CliArgs { share1, share2, zpub, threads, progress })
     }
 
     /// Load a mnemonic either from inline string or from file path.
@@ -71,5 +76,6 @@ mod tests {
         let parsed = CliArgs::parse_from(args.into_iter().map(String::from)).unwrap();
         assert_eq!(parsed.share1, "a");
         assert_eq!(parsed.share2, "b");
+        assert!(!parsed.progress);
     }
 }

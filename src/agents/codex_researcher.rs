@@ -1,6 +1,13 @@
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
+
+use crate::search::diff::DiffMetrics;
+
+// compile-time check on DiffMetrics size (24 bytes on 64-bit)
+#[cfg(target_pointer_width = "64")]
+const _: [(); 24] = [(); core::mem::size_of::<DiffMetrics>()];
 
 // compile-time endianness check
 const _: () = {
@@ -10,13 +17,27 @@ const _: () = {
 
 pub struct CodexResearcher {
     log_path: PathBuf,
+    csv_path: PathBuf,
+    stats: Mutex<Vec<DiffMetrics>>, // why: accumulate metrics across attempts
 }
 
 impl CodexResearcher {
     /// Create a new researcher that writes to `path`.
     pub fn new<P: AsRef<Path>>(path: P) -> Self {
+        let log_path = path.as_ref().to_path_buf();
+        let csv_path = log_path.with_extension("csv");
+        let mut csv = OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(true)
+            .open(&csv_path)
+            .expect("create csv log");
+        // why: header for chart-ready data
+        writeln!(csv, "attempt,prefix_len,hamming_distance,similarity").unwrap();
         Self {
-            log_path: path.as_ref().to_path_buf(),
+            log_path,
+            csv_path,
+            stats: Mutex::new(Vec::new()),
         }
     }
 
@@ -28,9 +49,15 @@ impl CodexResearcher {
         target_zpub: &str,
         entropy: &[u8],
         path: &str,
-        score: f64,
+        diff: DiffMetrics,
     ) -> std::io::Result<()> {
         let entropy_score = entropy_score(entropy);
+
+        let attempt_idx = {
+            let stats = self.stats.lock().unwrap();
+            stats.len() + 1
+        };
+
         let mut file = OpenOptions::new()
             .create(true)
             .append(true)
@@ -42,10 +69,26 @@ impl CodexResearcher {
             mnemonic,
             candidate_zpub,
             target_zpub,
-            score,
+            diff.similarity,
             entropy_score,
             path
         )?;
+
+        let mut csv = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&self.csv_path)?;
+        writeln!(
+            csv,
+            "{},{},{},{:.4}",
+            attempt_idx,
+            diff.prefix_len,
+            diff.hamming_distance,
+            diff.similarity
+        )?;
+
+        self.stats.lock().unwrap().push(diff);
+
         Ok(())
     }
 }
@@ -78,11 +121,16 @@ mod tests {
     fn writes_markdown_output() {
         let tmp = std::env::temp_dir().join(format!("codex-test-{}.md", rand::thread_rng().gen::<u32>()));
         let agent = CodexResearcher::new(&tmp);
+        let diff = crate::search::diff::zpub_diff("zpubA", "zpubB");
         agent
-            .record_attempt("alpha beta gamma", "zpub1234", "zpubXYZ", &[0, 1, 2, 3, 4], "1/2/3", 0.5)
+            .record_attempt("alpha beta gamma", "zpubA", "zpubB", &[0, 1, 2, 3, 4], "1/2/3", diff)
             .unwrap();
         let contents = std::fs::read_to_string(&tmp).unwrap();
         assert!(contents.contains("Candidate zpub"));
-        let _ = std::fs::remove_file(tmp);
+        let csv_path = tmp.with_extension("csv");
+        let csv = std::fs::read_to_string(&csv_path).unwrap();
+        assert!(csv.lines().count() > 1);
+        let _ = std::fs::remove_file(&tmp);
+        let _ = std::fs::remove_file(csv_path);
     }
 }
