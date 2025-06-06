@@ -1,0 +1,15 @@
+[package]
+name = "msrs"
+version = "0.1.0"
+authors = ["Your Name <you@example.com>"]
+edition = "2021"
+description = "Mnemonic Share Reverse Simulator (MSRS)"
+license = "MIT"
+
+[dependencies]
+bip39 = "1.1"
+hex = "0.4"
+sha2 = "0.10"
+blake2 = "0.10"
+rand = "0.8"
+rayon = "1.7"
