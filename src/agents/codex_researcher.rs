@@ -20,16 +20,17 @@ impl CodexResearcher {
         }
     }
 
-    /// Record a failed mnemonic attempt along with metrics.
-    pub fn record_failure(
+    /// Record an attempted mnemonic reconstruction with metrics.
+    pub fn record_attempt(
         &self,
         mnemonic: &str,
-        partial_zpub: &str,
+        candidate_zpub: &str,
+        target_zpub: &str,
         entropy: &[u8],
-        deviation: f64,
+        path: &str,
+        score: f64,
     ) -> std::io::Result<()> {
-        let score = entropy_score(entropy);
-        let hints = derive_heuristics(partial_zpub);
+        let entropy_score = entropy_score(entropy);
         let mut file = OpenOptions::new()
             .create(true)
             .append(true)
@@ -37,16 +38,14 @@ impl CodexResearcher {
 
         writeln!(
             file,
-            "## Failed Reconstruction\n- Mnemonic: `{}`\n- Partial zpub: `{}`\n- Entropy score: {:.2}\n- Deviation: {:.2}\n### Heuristics",
+            "## Attempt\n- Mnemonic: `{}`\n- Candidate zpub: `{}`\n- Target zpub: `{}`\n- Score: {:.4}\n- Entropy score: {:.2}\n- Path: `{}`\n",
             mnemonic,
-            partial_zpub,
+            candidate_zpub,
+            target_zpub,
             score,
-            deviation
+            entropy_score,
+            path
         )?;
-        for h in hints {
-            writeln!(file, "- {}", h)?;
-        }
-        writeln!(file)?;
         Ok(())
     }
 }
@@ -63,22 +62,11 @@ fn entropy_score(data: &[u8]) -> f64 {
     let mut score = 0.0;
     for &c in &counts {
         if c > 0 {
-            let p = c as f64 / len;
+            let p = c as f64 / len as f64;
             score -= p * p.log2();
         }
     }
     score
-}
-
-fn derive_heuristics(partial_zpub: &str) -> Vec<String> {
-    let mut hints = Vec::new();
-    if partial_zpub.len() < 6 {
-        hints.push("try deeper prefix search".to_string());
-    }
-    if !partial_zpub.starts_with('z') {
-        hints.push("check BIP84 path or prefix".to_string());
-    }
-    hints
 }
 
 #[cfg(test)]
@@ -88,14 +76,13 @@ mod tests {
 
     #[test]
     fn writes_markdown_output() {
-        let tmp =
-            std::env::temp_dir().join(format!("codex-test-{}.md", rand::thread_rng().gen::<u32>()));
+        let tmp = std::env::temp_dir().join(format!("codex-test-{}.md", rand::thread_rng().gen::<u32>()));
         let agent = CodexResearcher::new(&tmp);
         agent
-            .record_failure("alpha beta gamma", "zpub1234", &[0, 1, 2, 3, 4], 0.5)
+            .record_attempt("alpha beta gamma", "zpub1234", "zpubXYZ", &[0, 1, 2, 3, 4], "1/2/3", 0.5)
             .unwrap();
         let contents = std::fs::read_to_string(&tmp).unwrap();
-        assert!(contents.contains("Failed Reconstruction"));
+        assert!(contents.contains("Candidate zpub"));
         let _ = std::fs::remove_file(tmp);
     }
 }

@@ -18,11 +18,15 @@ const _: () = {
 /// their first byte. The remaining bytes are the share payload. `max_depth`
 /// controls how many candidate payloads will be enumerated (little-endian base
 /// 256 counter). The expected `zpub` is used to verify recovered mnemonics.
+use crate::agents::codex_researcher::CodexResearcher;
+use crate::search::diff::zpub_diff;
+
 pub fn brute_force_third_share(
     share_a: &[u8],
     share_b: &[u8],
     expected_zpub: &str,
     max_depth: usize,
+    log: Option<&CodexResearcher>,
 ) -> Option<(Vec<u8>, String)> {
     assert_eq!(share_a.len(), share_b.len(), "share length mismatch");
     assert!(share_a.len() > 1, "shares must include payload");
@@ -47,6 +51,8 @@ pub fn brute_force_third_share(
                 }
                 if let Ok(words) = entropy_to_mnemonic(&secret) {
                     let mnemonic = words.join(" ");
+                    let cand_z = crate::bip39::seed::derive_seed_zpub(&mnemonic).unwrap_or_default();
+                    let diff = zpub_diff(&cand_z, expected_zpub);
                     if let Ok(true) = derive_seed(&mnemonic, expected_zpub) {
                         println!(
                             "[+] Found candidate idx={} payload={} mnemonic={}",
@@ -55,6 +61,9 @@ pub fn brute_force_third_share(
                             mnemonic
                         );
                         return Some((share_c, mnemonic));
+                    } else if let Some(r) = log {
+                        let path_str = format!("{}/{}/{}", share_a[0], share_b[0], idx);
+                        let _ = r.record_attempt(&mnemonic, &cand_z, expected_zpub, &secret, &path_str, diff.similarity);
                     }
                 }
             }
@@ -91,6 +100,8 @@ pub fn brute_force_third_share(
                 if let Ok(words) = entropy_to_mnemonic(&secret) {
                     let mnemonic = words.join(" ");
 
+                    let cand_z = crate::bip39::seed::derive_seed_zpub(&mnemonic).unwrap_or_default();
+                    let diff = zpub_diff(&cand_z, expected_zpub);
                     if let Ok(true) = derive_seed(&mnemonic, expected_zpub) {
                         println!(
                             "[+] Found candidate idx={} payload={} mnemonic={}",
@@ -99,6 +110,9 @@ pub fn brute_force_third_share(
                             mnemonic
                         );
                         return Some((share_c, mnemonic));
+                    } else if let Some(r) = log {
+                        let path_str = format!("{}/{}/{}", share_a[0], share_b[0], idx);
+                        let _ = r.record_attempt(&mnemonic, &cand_z, expected_zpub, &secret, &path_str, diff.similarity);
                     }
                 }
             }
@@ -152,6 +166,7 @@ mod tests {
             &s2,
             &zpub,
             candidate_num + 1,
+            None,
         )
         .expect("should find share");
 

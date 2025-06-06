@@ -1,6 +1,10 @@
+#[derive(Clone)]
 pub struct Config {
     pub threads: usize,
     pub max_depth: usize,
+    pub share1: String,
+    pub share2: String,
+    pub zpub: Option<String>,
 }
 
 impl Default for Config {
@@ -8,6 +12,9 @@ impl Default for Config {
         Config {
             threads: 8,
             max_depth: 1024,
+            share1: String::new(),
+            share2: String::new(),
+            zpub: None,
         }
     }
 }
