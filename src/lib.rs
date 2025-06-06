@@ -1,17 +1,47 @@
+pub mod agents;
+pub mod bip39;
+pub mod cli;
 pub mod config;
 pub mod entropy;
-pub mod shamir;
-pub mod bip39;
 pub mod search;
-pub mod agents;
-pub mod utils;
+pub mod shamir;
 pub mod ui;
-pub mod cli;
+pub mod utils;
 use crate::utils::decode_share_mnemonic;
+pub use agents::*;
+pub use bip39::{checksum, seed};
+pub use search::brute;
+pub use shamir::{gf256, reconstruct};
 const _: () = {
     #[cfg(not(target_endian = "little"))]
     compile_error!("msrs assumes little-endian");
 };
+
+/// Execute the full agent pipeline given two known shares.
+pub fn run_pipeline(
+    share_a: &[u8],
+    share_b: &[u8],
+    expected_zpub: &str,
+    cfg: &config::Config,
+    log: Option<&agents::codex_researcher::CodexResearcher>,
+) -> Option<(Vec<u8>, String)> {
+    assert_eq!(share_a.len(), share_b.len(), "share length mismatch");
+    let entropy_agent =
+        agents::entropy_profiler::EntropyProfilerAgent::new(entropy::prng::PrngSettings {
+            reuse_period: cfg.prng_reuse_period,
+            mask: cfg.prng_mask,
+        });
+    brute::brute_force_third_share(
+        share_a,
+        share_b,
+        expected_zpub,
+        cfg.max_depth,
+        log,
+        &entropy_agent.settings(),
+        cfg.index_collision_prob,
+        cfg.progress,
+    )
+}
 
 pub fn run(cfg: config::Config) {
     ui::init_global();
@@ -34,18 +64,7 @@ pub fn run(cfg: config::Config) {
     let zpub = cfg.zpub.as_deref().unwrap_or("");
     let researcher = agents::codex_researcher::CodexResearcher::new("codex-replay.md");
 
-    let prng_cfg = entropy::prng::PrngSettings { reuse_period: cfg.prng_reuse_period, mask: cfg.prng_mask };
-    let result = search::brute::brute_force_third_share(
-        &s1,
-        &s2,
-        zpub,
-        cfg.max_depth,
-        Some(&researcher),
-        &prng_cfg,
-        cfg.index_collision_prob,
-        cfg.progress,
-    );
-
+    let result = run_pipeline(&s1, &s2, zpub, &cfg, Some(&researcher));
 
     if let Some((_, mnemonic)) = result {
         let derived = bip39::seed::derive_seed_zpub(&mnemonic).unwrap_or_default();
