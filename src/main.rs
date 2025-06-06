@@ -5,6 +5,7 @@ fn main() {
     cfg.share1 = args.share1;
     cfg.share2 = args.share2;
     cfg.zpub = args.zpub;
+    cfg.progress = args.progress;
     if let Some(t) = args.threads { cfg.threads = t; }
     msrs::run(cfg);
 }
