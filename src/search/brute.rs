@@ -1,5 +1,7 @@
 use rayon::prelude::*;
 
+use crate::search::heuristics::candidate_queue;
+
 use crate::bip39::{checksum::entropy_to_mnemonic, seed::derive_seed};
 use crate::shamir::reconstruct::attempt_reconstruction;
 use crate::utils::hexify;
@@ -27,6 +29,40 @@ pub fn brute_force_third_share(
     assert!(share_a[0] != share_b[0], "duplicate share indexes");
 
     let payload_len = share_a.len() - 1;
+
+    let heuristics_first = candidate_queue(share_a, share_b, max_depth, 256);
+    if let Some(found) = heuristics_first.into_par_iter().find_map_any(|data| {
+        for idx in 1u8..=255 {
+            if idx == share_a[0] || idx == share_b[0] {
+                continue;
+            }
+
+            let mut share_c = Vec::with_capacity(payload_len + 1);
+            share_c.push(idx);
+            share_c.extend_from_slice(&data);
+
+            if let Ok(secret) = attempt_reconstruction(share_a, share_b, &share_c) {
+                if secret.len() != 16 {
+                    continue;
+                }
+                if let Ok(words) = entropy_to_mnemonic(&secret) {
+                    let mnemonic = words.join(" ");
+                    if let Ok(true) = derive_seed(&mnemonic, expected_zpub) {
+                        println!(
+                            "[+] Found candidate idx={} payload={} mnemonic={}",
+                            idx,
+                            hexify(&data),
+                            mnemonic
+                        );
+                        return Some((share_c, mnemonic));
+                    }
+                }
+            }
+        }
+        None
+    }) {
+        return Some(found);
+    }
 
     (0..max_depth).into_par_iter().find_map_any(|candidate| {
         // why: enumerate candidate payloads as a little-endian counter
