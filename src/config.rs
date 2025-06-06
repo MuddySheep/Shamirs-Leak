@@ -5,7 +5,13 @@ pub struct Config {
     pub share1: String,
     pub share2: String,
     pub zpub: Option<String>,
+
+    pub prng_reuse_period: usize,
+    pub prng_mask: u8,
+    pub index_collision_prob: f64,
+
     pub progress: bool,
+
 }
 
 impl Default for Config {
@@ -16,7 +22,13 @@ impl Default for Config {
             share1: String::new(),
             share2: String::new(),
             zpub: None,
+
+            prng_reuse_period: 4,
+            prng_mask: 0x7f,
+            index_collision_prob: 0.0,
+
             progress: false,
+
         }
     }
 }

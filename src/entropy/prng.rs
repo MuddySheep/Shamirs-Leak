@@ -5,6 +5,21 @@ const _: () = {
     compile_error!("prng assumes a little-endian target");
 };
 
+#[derive(Clone, Copy)]
+pub struct PrngSettings {
+    pub reuse_period: usize,
+    pub mask: u8,
+}
+
+impl Default for PrngSettings {
+    fn default() -> Self {
+        Self { reuse_period: 4, mask: 0x7f }
+    }
+}
+
+// compile-time check on struct layout size
+const _: [u8; 16] = [0; core::mem::size_of::<PrngSettings>()];
+
 /// Very small LCG used to mimic weak JS entropy.
 /// state_{n+1} = (a * state_n + c) mod m.
 struct WeakPrng {
@@ -37,12 +52,13 @@ static ENTROPY_CALLS: AtomicUsize = AtomicUsize::new(0);
 
 /// Generate up to 32 bytes of weak entropy. Every fourth call reuses the
 /// original seed to mimic flawed seeding logic.
-pub fn generate_entropy(len: usize) -> Vec<u8> {
+pub fn generate_entropy_with(len: usize, settings: &PrngSettings) -> Vec<u8> {
     assert!(len <= 32, "max 32 bytes per call");
+    assert!(settings.reuse_period > 0, "reuse_period must be >0");
 
     let call = ENTROPY_CALLS.fetch_add(1, Ordering::SeqCst);
     let seed_base = 0x1337u32;
-    let seed = if call % 4 == 0 {
+    let seed = if call % settings.reuse_period == 0 {
         seed_base // why: seed reuse creates repeating cycles
     } else {
         seed_base ^ (call as u32)
@@ -50,6 +66,10 @@ pub fn generate_entropy(len: usize) -> Vec<u8> {
 
     let mut rng = WeakPrng::new(seed);
     (0..len).map(|_| rng.next_u8()).collect()
+}
+
+pub fn generate_entropy(len: usize) -> Vec<u8> {
+    generate_entropy_with(len, &PrngSettings::default())
 }
 
 /// Score how well `candidate` matches the PRNG output in `reference`.
@@ -71,16 +91,16 @@ pub(crate) fn reset_entropy_calls() {
 
 /// Simulate the entropy source used by the JS implementation.
 /// Returns `len` bytes produced by a deterministic weak RNG.
-pub fn simulate_entropy_source(len: usize) -> Vec<u8> {
+pub fn simulate_entropy_source_with(len: usize, settings: &PrngSettings) -> Vec<u8> {
     println!("[Entropy] Simulating entropy generation...");
     let mut out = Vec::with_capacity(len);
     let mut prev = 0u8;
     let mut remaining = len;
     while remaining > 0 {
         let chunk_len = remaining.min(32);
-        let bytes = generate_entropy(chunk_len);
+        let bytes = generate_entropy_with(chunk_len, settings);
         for b in bytes {
-            let mut v = b & 0x7f; // why: narrow range 0..127
+            let mut v = b & settings.mask; // why: narrow range
             if out.len() % 3 == 2 {
                 v = prev; // why: every third byte repeats previous
             } else {
@@ -93,13 +113,17 @@ pub fn simulate_entropy_source(len: usize) -> Vec<u8> {
     out
 }
 
+pub fn simulate_entropy_source(len: usize) -> Vec<u8> {
+    simulate_entropy_source_with(len, &PrngSettings::default())
+}
+
 /// Build a sample share payload using the weak PRNG.
 pub fn sample_share(idx: u8, len: usize) -> Vec<u8> {
     assert!(idx > 0, "invalid share index");
     assert!(len > 0, "share length must be > 0");
     let mut data = Vec::with_capacity(len);
     data.push(idx);
-    data.extend_from_slice(&simulate_entropy_source(len - 1));
+    data.extend_from_slice(&simulate_entropy_source_with(len - 1, &PrngSettings::default()));
     data
 }
 
@@ -133,6 +157,14 @@ pub fn sample_share(idx: u8, len: usize) -> Vec<u8> {
             let _ = generate_entropy(32);
             let fourth = generate_entropy(32); // seed reused on call 4
             assert_eq!(first, fourth);
+        }
+
+        #[test]
+        fn test_mask_behavior() {
+            let settings = PrngSettings { reuse_period: 4, mask: 0x3f };
+            reset_entropy_calls();
+            let bytes = simulate_entropy_source_with(4, &settings);
+            for b in bytes { assert!(b <= 0x3f); }
         }
 
         #[test]

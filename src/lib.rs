@@ -33,7 +33,20 @@ pub fn run(cfg: config::Config) {
 
     let zpub = cfg.zpub.as_deref().unwrap_or("");
     let researcher = agents::codex_researcher::CodexResearcher::new("codex-replay.md");
+
+    let prng_cfg = entropy::prng::PrngSettings { reuse_period: cfg.prng_reuse_period, mask: cfg.prng_mask };
+    let result = search::brute::brute_force_third_share(
+        &s1,
+        &s2,
+        zpub,
+        cfg.max_depth,
+        Some(&researcher),
+        &prng_cfg,
+        cfg.index_collision_prob,
+    );
+
     let result = search::brute::brute_force_third_share(&s1, &s2, zpub, cfg.max_depth, Some(&researcher), cfg.progress);
+
 
     if let Some((_, mnemonic)) = result {
         let derived = bip39::seed::derive_seed_zpub(&mnemonic).unwrap_or_default();
