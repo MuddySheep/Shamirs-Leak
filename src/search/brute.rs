@@ -1,6 +1,6 @@
 use rayon::prelude::*;
 
-use crate::search::heuristics::{candidate_queue, candidate_indexes};
+use crate::search::heuristics::{candidate_indexes, candidate_queue};
 
 use crate::bip39::{checksum::entropy_to_mnemonic, seed::derive_seed};
 use crate::shamir::reconstruct::attempt_reconstruction;
@@ -27,12 +27,9 @@ pub fn brute_force_third_share(
     expected_zpub: &str,
     max_depth: usize,
     log: Option<&CodexResearcher>,
-
     prng: &crate::entropy::prng::PrngSettings,
     index_collision_prob: f64,
-
     show_progress: bool,
-
 ) -> Option<(Vec<u8>, String)> {
     assert_eq!(share_a.len(), share_b.len(), "share length mismatch");
     assert!(share_a.len() > 1, "shares must include payload");
@@ -42,19 +39,14 @@ pub fn brute_force_third_share(
 
     let payload_len = share_a.len() - 1;
 
-
     let heuristics_first = candidate_queue(share_a, share_b, max_depth, 256, prng);
     let idx_candidates = candidate_indexes(share_a[0], share_b[0], index_collision_prob);
-    if let Some(found) = heuristics_first.into_par_iter().find_map_any(|data| {
-        for &idx in idx_candidates.iter() {
-            if index_collision_prob == 0.0 && (idx == share_a[0] || idx == share_b[0]) {
 
-    let heuristics_first = candidate_queue(share_a, share_b, max_depth, 256);
     let mut best_similarity = 0.0f64;
     if show_progress {
         for data in heuristics_first {
-            for idx in 1u8..=255 {
-                if idx == share_a[0] || idx == share_b[0] {
+            for &idx in idx_candidates.iter() {
+                if index_collision_prob == 0.0 && (idx == share_a[0] || idx == share_b[0]) {
                     continue;
                 }
 
@@ -91,9 +83,9 @@ pub fn brute_force_third_share(
             }
         }
     } else if let Some(found) = heuristics_first.into_par_iter().find_map_any(|data| {
-        for idx in 1u8..=255 {
-            if idx == share_a[0] || idx == share_b[0] {
-  continue;
+        for &idx in idx_candidates.iter() {
+            if index_collision_prob == 0.0 && (idx == share_a[0] || idx == share_b[0]) {
+                continue;
             }
 
             let mut share_c = Vec::with_capacity(payload_len + 1);
@@ -138,8 +130,8 @@ pub fn brute_force_third_share(
                 tmp >>= 8;
             }
 
-            for idx in 1u8..=255 {
-                if idx == share_a[0] || idx == share_b[0] {
+            for &idx in idx_candidates.iter() {
+                if index_collision_prob == 0.0 && (idx == share_a[0] || idx == share_b[0]) {
                     continue;
                 }
 
@@ -188,43 +180,43 @@ pub fn brute_force_third_share(
                 tmp >>= 8;
             }
 
-        for &idx in idx_candidates.iter() {
-            if index_collision_prob == 0.0 && (idx == share_a[0] || idx == share_b[0]) {
-                continue;
-            }
-
-            let mut share_c = Vec::with_capacity(payload_len + 1);
-            share_c.push(idx);
-            share_c.extend_from_slice(&data);
-
-            if let Ok(secret) = attempt_reconstruction(share_a, share_b, &share_c) {
-                // why: only 16-byte secrets map to 12-word mnemonics
-                if secret.len() != 16 {
+            for &idx in idx_candidates.iter() {
+                if index_collision_prob == 0.0 && (idx == share_a[0] || idx == share_b[0]) {
                     continue;
                 }
 
-                if let Ok(words) = entropy_to_mnemonic(&secret) {
-                    let mnemonic = words.join(" ");
+                let mut share_c = Vec::with_capacity(payload_len + 1);
+                share_c.push(idx);
+                share_c.extend_from_slice(&data);
 
-                    let cand_z = crate::bip39::seed::derive_seed_zpub(&mnemonic).unwrap_or_default();
-                    let diff = zpub_diff(&cand_z, expected_zpub);
-                    if let Ok(true) = derive_seed(&mnemonic, expected_zpub) {
-                        println!(
-                            "[+] Found candidate idx={} payload={} mnemonic={}",
-                            idx,
-                            hexify(&data),
-                            mnemonic
-                        );
-                        return Some((share_c, mnemonic));
-                    } else if let Some(r) = log {
-                        let path_str = format!("{}/{}/{}", share_a[0], share_b[0], idx);
-                        let _ = r.record_attempt(&mnemonic, &cand_z, expected_zpub, &secret, &path_str, diff);
+                if let Ok(secret) = attempt_reconstruction(share_a, share_b, &share_c) {
+                    // why: only 16-byte secrets map to 12-word mnemonics
+                    if secret.len() != 16 {
+                        continue;
+                    }
+
+                    if let Ok(words) = entropy_to_mnemonic(&secret) {
+                        let mnemonic = words.join(" ");
+
+                        let cand_z = crate::bip39::seed::derive_seed_zpub(&mnemonic).unwrap_or_default();
+                        let diff = zpub_diff(&cand_z, expected_zpub);
+                        if let Ok(true) = derive_seed(&mnemonic, expected_zpub) {
+                            println!(
+                                "[+] Found candidate idx={} payload={} mnemonic={}",
+                                idx,
+                                hexify(&data),
+                                mnemonic
+                            );
+                            return Some((share_c, mnemonic));
+                        } else if let Some(r) = log {
+                            let path_str = format!("{}/{}/{}", share_a[0], share_b[0], idx);
+                            let _ = r.record_attempt(&mnemonic, &cand_z, expected_zpub, &secret, &path_str, diff);
+                        }
                     }
                 }
             }
-        }
-        None
-    })
+            None
+        })
     }
 }
 
@@ -274,11 +266,9 @@ mod tests {
             &zpub,
             candidate_num + 1,
             None,
-
             &crate::entropy::prng::PrngSettings::default(),
             0.0,
-   false,
-main
+            false,
         )
         .expect("should find share");
 

@@ -43,9 +43,8 @@ pub fn run(cfg: config::Config) {
         Some(&researcher),
         &prng_cfg,
         cfg.index_collision_prob,
+        cfg.progress,
     );
-
-    let result = search::brute::brute_force_third_share(&s1, &s2, zpub, cfg.max_depth, Some(&researcher), cfg.progress);
 
 
     if let Some((_, mnemonic)) = result {
