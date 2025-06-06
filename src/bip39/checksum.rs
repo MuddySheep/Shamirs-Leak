@@ -146,5 +146,40 @@ mod tests {
         let valid = bip39::Mnemonic::from_str(&corrected_str).is_ok();
         assert!(valid, "corrected mnemonic should be valid");
     }
+
+    fn encode_share(index: u8, payload: &[u8; 16]) -> String {
+        assert!(index > 0 && index < 16);
+        let mut bits = [false; 132];
+        for (i, b) in payload.iter().enumerate() {
+            for j in 0..8 {
+                bits[i * 8 + j] = (b & (1 << (7 - j))) != 0;
+            }
+        }
+        for i in 0..4 {
+            bits[128 + i] = (index & (1 << (3 - i))) != 0;
+        }
+        let list = Language::English.word_list();
+        let mut out = Vec::with_capacity(12);
+        for i in 0..12 {
+            let mut idx: u16 = 0;
+            for j in 0..11 {
+                if bits[i * 11 + j] {
+                    idx |= 1 << (10 - j);
+                }
+            }
+            out.push(list[idx as usize].to_string());
+        }
+        out.join(" ")
+    }
+
+    #[test]
+    fn test_share_round_trip() {
+        let payload: [u8; 16] = [1u8; 16];
+        let idx = 5u8;
+        let mnemonic = encode_share(idx, &payload);
+        let (d_idx, d_payload) = crate::utils::decode_share_mnemonic(&mnemonic).expect("decode");
+        assert_eq!(idx, d_idx);
+        assert_eq!(d_payload, payload);
+    }
 }
 
