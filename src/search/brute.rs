@@ -20,6 +20,7 @@ const _: () = {
 /// 256 counter). The expected `zpub` is used to verify recovered mnemonics.
 use crate::agents::codex_researcher::CodexResearcher;
 use crate::search::diff::zpub_diff;
+use crate::ui; // why: track global search metrics
 
 pub fn brute_force_third_share(
     share_a: &[u8],
@@ -42,6 +43,8 @@ pub fn brute_force_third_share(
     let heuristics_first = candidate_queue(share_a, share_b, max_depth, 256, prng);
     let idx_candidates = candidate_indexes(share_a[0], share_b[0], index_collision_prob);
 
+    let stats = ui::global(); // why: collect metrics during brute force
+
     let mut best_similarity = 0.0f64;
     if show_progress {
         for data in heuristics_first {
@@ -54,6 +57,7 @@ pub fn brute_force_third_share(
                 share_c.push(idx);
                 share_c.extend_from_slice(&data);
 
+                stats.inc_candidates(1); // why: count each tested candidate
                 if let Ok(secret) = attempt_reconstruction(share_a, share_b, &share_c) {
                     if secret.len() != 16 {
                         continue;
@@ -62,11 +66,13 @@ pub fn brute_force_third_share(
                         let mnemonic = words.join(" ");
                         let cand_z = crate::bip39::seed::derive_seed_zpub(&mnemonic).unwrap_or_default();
                         let diff = zpub_diff(&cand_z, expected_zpub);
+                        stats.update_best(diff.prefix_len as u64, &cand_z[..diff.prefix_len.min(cand_z.len())]);
                         if diff.similarity > best_similarity {
                             best_similarity = diff.similarity;
                             println!("[Progress] best similarity {:.4}", best_similarity);
                         }
                         if let Ok(true) = derive_seed(&mnemonic, expected_zpub) {
+                            stats.inc_matches(1);
                             println!(
                                 "[+] Found candidate idx={} payload={} mnemonic={}",
                                 idx,
@@ -92,6 +98,7 @@ pub fn brute_force_third_share(
             share_c.push(idx);
             share_c.extend_from_slice(&data);
 
+            stats.inc_candidates(1); // why: parallel candidate count
             if let Ok(secret) = attempt_reconstruction(share_a, share_b, &share_c) {
                 if secret.len() != 16 {
                     continue;
@@ -100,7 +107,9 @@ pub fn brute_force_third_share(
                     let mnemonic = words.join(" ");
                     let cand_z = crate::bip39::seed::derive_seed_zpub(&mnemonic).unwrap_or_default();
                     let diff = zpub_diff(&cand_z, expected_zpub);
+                    stats.update_best(diff.prefix_len as u64, &cand_z[..diff.prefix_len.min(cand_z.len())]);
                     if let Ok(true) = derive_seed(&mnemonic, expected_zpub) {
+                        stats.inc_matches(1);
                         println!(
                             "[+] Found candidate idx={} payload={} mnemonic={}",
                             idx,
@@ -139,6 +148,7 @@ pub fn brute_force_third_share(
                 share_c.push(idx);
                 share_c.extend_from_slice(&data);
 
+                stats.inc_candidates(1);
                 if let Ok(secret) = attempt_reconstruction(share_a, share_b, &share_c) {
                     if secret.len() != 16 {
                         continue;
@@ -149,11 +159,13 @@ pub fn brute_force_third_share(
 
                         let cand_z = crate::bip39::seed::derive_seed_zpub(&mnemonic).unwrap_or_default();
                         let diff = zpub_diff(&cand_z, expected_zpub);
+                        stats.update_best(diff.prefix_len as u64, &cand_z[..diff.prefix_len.min(cand_z.len())]);
                         if diff.similarity > best_similarity {
                             best_similarity = diff.similarity;
                             println!("[Progress] best similarity {:.4}", best_similarity);
                         }
                         if let Ok(true) = derive_seed(&mnemonic, expected_zpub) {
+                            stats.inc_matches(1);
                             println!(
                                 "[+] Found candidate idx={} payload={} mnemonic={}",
                                 idx,
@@ -189,6 +201,7 @@ pub fn brute_force_third_share(
                 share_c.push(idx);
                 share_c.extend_from_slice(&data);
 
+                stats.inc_candidates(1);
                 if let Ok(secret) = attempt_reconstruction(share_a, share_b, &share_c) {
                     // why: only 16-byte secrets map to 12-word mnemonics
                     if secret.len() != 16 {
@@ -200,7 +213,9 @@ pub fn brute_force_third_share(
 
                         let cand_z = crate::bip39::seed::derive_seed_zpub(&mnemonic).unwrap_or_default();
                         let diff = zpub_diff(&cand_z, expected_zpub);
+                        stats.update_best(diff.prefix_len as u64, &cand_z[..diff.prefix_len.min(cand_z.len())]);
                         if let Ok(true) = derive_seed(&mnemonic, expected_zpub) {
+                            stats.inc_matches(1);
                             println!(
                                 "[+] Found candidate idx={} payload={} mnemonic={}",
                                 idx,
@@ -246,6 +261,7 @@ mod tests {
 
     #[test]
     fn test_brute_force_finds_share() {
+        let _ = crate::ui::init_global(); // why: required for stats
         let secret = [0u8; 16];
         let a = [0u8; 16];
         let b = [0u8; 16];
